@@ -5,6 +5,46 @@ export class EffectsManager {
     constructor(gameEngine) {
         this.engine = gameEngine;
         this.activeEffects = [];
+        
+        // Gravity field visualization
+        this.gravityField = null;
+        this.createGravityField();
+    }
+    
+    createGravityField() {
+        const geometry = new THREE.SphereGeometry(1, 32, 32);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0,
+            wireframe: true
+        });
+        
+        this.gravityField = new THREE.Mesh(geometry, material);
+        this.engine.scene.add(this.gravityField);
+    }
+    
+    updateGravityField(position, mode, range, strength) {
+        if (!this.gravityField) return;
+        
+        this.gravityField.position.copy(position);
+        this.gravityField.scale.setScalar(range);
+        
+        const material = this.gravityField.material;
+        
+        if (mode === 'neutral') {
+            material.opacity = 0;
+        } else {
+            // Color based on mode
+            material.color.setHex(mode === 'attract' ? 0x0088ff : 0xff0044);
+            
+            // Opacity based on strength
+            material.opacity = 0.1 + (strength / 50) * 0.2;
+            
+            // Pulse effect
+            const pulse = Math.sin(Date.now() * 0.003) * 0.05;
+            material.opacity += pulse;
+        }
     }
 
     // Absorption effect

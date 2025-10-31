@@ -88,6 +88,10 @@ The optimized build will be in the `dist/` directory.
 | **E / Ctrl** | Descend (Move Down) |
 | **Space** | Boost |
 | **R** | Recycle (Convert mass to points) |
+| **G** | Toggle Gravity Field (Neutral/Attract/Repel) |
+| **Ctrl + Wheel** | Adjust Gravity Strength |
+| **Mouse Wheel** | Zoom Camera In/Out |
+| **+ / -** | Zoom Camera In/Out (Keyboard) |
 | **B** | Toggle Build Mode |
 | **1-3** | Select Building (in Build Mode) |
 | **Tab** | Toggle Sidebar |
@@ -133,6 +137,22 @@ The optimized build will be in the `dist/` directory.
 - **Red** → **Yellow** → **Green** as health improves
 - Trees within zones improve their health
 - Healthy zones support better resource generation
+
+### 🌀 Gravity Field System (NEW!)
+- **Press G** to cycle through gravity modes
+- **Three Modes**:
+  - ⚪ **Neutral**: No gravity effect (default)
+  - 🔵 **Attract**: Pull debris toward you from 30 units away
+  - 🔴 **Repel**: Push debris away from you
+- **Ctrl + Mouse Wheel**: Adjust gravity strength (5-50)
+- Visual wireframe sphere shows active field
+- Uses inverse-square falloff for realistic physics
+
+### Strategic Uses:
+- **Attract Mode**: Gather resources quickly, pull debris into recyclers
+- **Repel Mode**: Push away dangerous large debris, create safe zones
+- **Neutral Mode**: Precise movement without affecting debris flow
+- **Combine with Buildings**: Use attract to feed recyclers, repel to protect trees
 
 ### Missions
 - Complete objectives for bonus points

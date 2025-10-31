@@ -32,6 +32,11 @@ class GravshiftGame {
         this.buildMode = false;
         this.selectedBuildingType = null;
         
+        // Gravity field state
+        this.gravityMode = 'neutral'; // 'attract', 'repel', 'neutral'
+        this.gravityStrength = 15;
+        this.gravityRange = 30;
+        
         // Game state
         this.isRunning = false;
         this.isPaused = false;
@@ -71,6 +76,14 @@ class GravshiftGame {
             return false;
         });
         
+        // G - Toggle gravity mode (Attract/Repel/Neutral)
+        this.input.registerHotkey('g', () => {
+            if (this.isRunning && !this.isPaused && !this.buildMode) {
+                this.cycleGravityMode();
+            }
+            return false;
+        });
+        
         // B - Toggle build mode
         this.input.registerHotkey('b', () => {
             if (this.isRunning && !this.isPaused) {
@@ -106,6 +119,37 @@ class GravshiftGame {
             if (this.buildMode && this.selectedBuildingType && !e.target.closest('.menu, .panel')) {
                 this.tryPlaceBuilding();
             }
+        });
+        
+        // Mouse wheel for zoom and gravity strength adjustment
+        window.addEventListener('wheel', (e) => {
+            if (this.isRunning && !this.isPaused) {
+                if (e.ctrlKey) {
+                    // Ctrl + Wheel: Adjust gravity strength
+                    e.preventDefault();
+                    this.gravityStrength = Math.max(5, Math.min(50, this.gravityStrength - e.deltaY * 0.01));
+                    console.log(`Gravity strength: ${this.gravityStrength.toFixed(1)}`);
+                } else {
+                    // Wheel only: Zoom camera
+                    e.preventDefault();
+                    this.handleZoom(e.deltaY);
+                }
+            }
+        }, { passive: false });
+        
+        // Plus/Minus keys for zoom (alternative controls)
+        this.input.registerHotkey('equal', () => { // + key (same as =)
+            if (this.isRunning && !this.isPaused) {
+                this.handleZoom(-100); // Zoom in
+            }
+            return false;
+        });
+        
+        this.input.registerHotkey('minus', () => { // - key
+            if (this.isRunning && !this.isPaused) {
+                this.handleZoom(100); // Zoom out
+            }
+            return false;
         });
     }
 
@@ -236,6 +280,14 @@ class GravshiftGame {
         this.effects.update(deltaTime);
         this.engine.updateCamera(this.playerPosition, deltaTime);
         
+        // Update gravity field visualization
+        this.effects.updateGravityField(
+            this.playerPosition,
+            this.gravityMode,
+            this.gravityRange,
+            this.gravityStrength
+        );
+        
         // Update UI
         this.ui.updateHUD();
     }
@@ -255,6 +307,9 @@ class GravshiftGame {
     updateEntities(deltaTime) {
         // Spawn debris
         this.spawnDebris(deltaTime);
+        
+        // Apply gravity field to debris
+        this.applyGravityField(deltaTime);
         
         // Update all active entities in one pass
         this.engine.update(deltaTime);
@@ -458,6 +513,75 @@ class GravshiftGame {
         
         // Remove debris
         this.engine.debrisPool.release(debris);
+    }
+    
+    // Gravity field methods
+    cycleGravityMode() {
+        const modes = ['neutral', 'attract', 'repel'];
+        const currentIndex = modes.indexOf(this.gravityMode);
+        this.gravityMode = modes[(currentIndex + 1) % modes.length];
+        
+        // Visual and audio feedback
+        const modeNames = {
+            'neutral': '⚪ Neutral Field',
+            'attract': '🔵 Attract Field',
+            'repel': '🔴 Repel Field'
+        };
+        
+        this.ui.showNotification(modeNames[this.gravityMode], 'Gravity mode changed', 'normal');
+        this.audio.playBoost(); // Use boost sound for mode change
+        
+        console.log(`Gravity mode: ${this.gravityMode}`);
+    }
+    
+    applyGravityField(deltaTime) {
+        if (this.gravityMode === 'neutral') return;
+        
+        const debris = this.engine.debrisPool.getActive();
+        const isAttract = this.gravityMode === 'attract';
+        
+        debris.forEach(d => {
+            const toPlayer = new THREE.Vector3().subVectors(this.playerPosition, d.position);
+            const distance = toPlayer.length();
+            
+            // Only affect debris within range
+            if (distance < this.gravityRange && distance > 0.1) {
+                // Gravity falls off with distance (inverse square law)
+                const falloff = 1 - (distance / this.gravityRange);
+                const strength = this.gravityStrength * falloff * falloff;
+                
+                // Normalize direction and apply force
+                toPlayer.normalize();
+                const force = toPlayer.multiplyScalar(strength * deltaTime);
+                
+                // Apply force (attract or repel)
+                if (isAttract) {
+                    d.userData.velocity.add(force);
+                } else {
+                    d.userData.velocity.sub(force);
+                }
+            }
+        });
+    }
+    
+    handleZoom(delta) {
+        // Get current camera distance
+        const currentDistance = this.engine.getCameraDistance();
+        
+        // Calculate new distance (zoom in = decrease distance, zoom out = increase)
+        const zoomSpeed = 0.1;
+        const zoomDelta = delta * zoomSpeed;
+        const newDistance = Math.max(5, Math.min(100, currentDistance + zoomDelta));
+        
+        // Apply new distance
+        this.engine.setCameraDistance(newDistance);
+        
+        // Show zoom level notification (throttled)
+        if (!this.lastZoomNotify || Date.now() - this.lastZoomNotify > 500) {
+            const zoomPercent = Math.round(((100 - newDistance) / 95) * 100);
+            this.ui.showNotification('🔍 Zoom', `${zoomPercent}%`, 'normal');
+            this.lastZoomNotify = Date.now();
+        }
     }
     
     // Building mode methods

@@ -71,6 +71,7 @@ export class GameEngine {
         
         // Camera settings
         this.camera.position.z = 50;
+        this.cameraDistance = 50; // Initial camera distance
         this.cameraOffset = new THREE.Vector3(0, 15, 50);
         this.cameraShake = { x: 0, y: 0, intensity: 0 };
         
@@ -364,6 +365,10 @@ export class GameEngine {
     updateCamera(playerPosition, deltaTime) {
         if (!this.player) return;
         
+        // Update camera offset based on distance
+        this.cameraOffset.y = this.cameraDistance * 0.3; // Height proportional to distance
+        this.cameraOffset.z = this.cameraDistance;
+        
         // Smooth camera follow
         const targetPosition = playerPosition.clone().add(this.cameraOffset);
         this.camera.position.lerp(targetPosition, deltaTime * 2);
@@ -381,7 +386,15 @@ export class GameEngine {
         // Update player light
         this.playerLight.position.copy(playerPosition);
     }
-
+    
+    getCameraDistance() {
+        return this.cameraDistance;
+    }
+    
+    setCameraDistance(distance) {
+        this.cameraDistance = Math.max(5, Math.min(100, distance));
+    }
+    
     screenShake(intensity = 1) {
         this.cameraShake.intensity = intensity;
     }
