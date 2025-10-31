@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gravshift - Master Gravity, Absorb Everything</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <!-- Game Container -->
+    <div id="game-container"></div>
+    
+    <!-- HUD Overlay -->
+    <div id="hud">
+        <div class="hud-top">
+            <div class="stat-group">
+                <div class="stat">
+                    <span class="label">Mass:</span>
+                    <span id="mass-value" class="value">1.0</span>
+                </div>
+                <div class="stat">
+                    <span class="label">Tier:</span>
+                    <span id="tier-value" class="value">1</span>
+                </div>
+                <div class="stat">
+                    <span class="label">Score:</span>
+                    <span id="score-value" class="value">0</span>
+                </div>
+            </div>
+            <div class="mission-tracker">
+                <div id="current-mission" class="mission-display"></div>
+            </div>
+        </div>
+        
+        <div class="hud-bottom">
+            <div id="tier-progress-bar" class="progress-bar">
+                <div id="tier-progress-fill" class="progress-fill"></div>
+                <span id="tier-progress-text" class="progress-text">Next Tier: 0%</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Sidebar -->
+    <div id="sidebar">
+        <div id="sidebar-toggle">☰</div>
+        
+        <div class="sidebar-section">
+            <h3>
+                🎯 Missions
+                <span class="section-toggle">▼</span>
+            </h3>
+            <div class="sidebar-content">
+                <div id="sidebar-mission-display"></div>
+            </div>
+        </div>
+        
+        <div class="sidebar-section">
+            <h3>
+                🏆 Achievements
+                <span class="section-toggle">▼</span>
+            </h3>
+            <div class="sidebar-content">
+                <div id="sidebar-achievements"></div>
+            </div>
+        </div>
+        
+        <div class="sidebar-section">
+            <h3>
+                ⌨️ Hotkeys
+                <span class="section-toggle">▼</span>
+            </h3>
+            <div class="sidebar-content">
+                <div class="hotkey-list">
+                    <div class="hotkey-item">
+                        <span class="hotkey-key">W/↑</span>
+                        <span class="hotkey-action">Move Forward</span>
+                    </div>
+                    <div class="hotkey-item">
+                        <span class="hotkey-key">S/↓</span>
+                        <span class="hotkey-action">Move Back</span>
+                    </div>
+                    <div class="hotkey-item">
+                        <span class="hotkey-key">A/←</span>
+                        <span class="hotkey-action">Move Left</span>
+                    </div>
+                    <div class="hotkey-item">
+                        <span class="hotkey-key">D/→</span>
+                        <span class="hotkey-action">Move Right</span>
+                    </div>
+                    <div class="hotkey-item">
+                        <span class="hotkey-key">Space</span>
+                        <span class="hotkey-action">Boost</span>
+                    </div>
+                    <div class="hotkey-item">
+                        <span class="hotkey-key">R</span>
+                        <span class="hotkey-action">Recycle Mass</span>
+                    </div>
+                    <div class="hotkey-item">
+                        <span class="hotkey-key">ESC</span>
+                        <span class="hotkey-action">Pause</span>
+                    </div>
+                    <div class="hotkey-item">
+                        <span class="hotkey-key">F3</span>
+                        <span class="hotkey-action">Debug Info</span>
+                    </div>
+                    <div class="hotkey-item">
+                        <span class="hotkey-key">Tab</span>
+                        <span class="hotkey-action">Toggle Sidebar</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="sidebar-section">
+            <h3>
+                📊 Stats
+                <span class="section-toggle">▼</span>
+            </h3>
+            <div class="sidebar-content">
+                <div id="sidebar-stats"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Menu -->
+    <div id="main-menu" class="menu active">
+        <h1 class="game-title">GRAVSHIFT</h1>
+        <p class="tagline">Master Gravity. Absorb Everything.</p>
+        <div class="menu-buttons">
+            <button id="start-game" class="btn btn-primary">Start Game</button>
+            <button id="view-achievements" class="btn btn-secondary">Achievements</button>
+            <button id="view-leaderboard" class="btn btn-secondary">Leaderboard</button>
+            <button id="view-controls" class="btn btn-secondary">Controls</button>
+        </div>
+    </div>
+    
+    <!-- Pause Menu -->
+    <div id="pause-menu" class="menu">
+        <h2>Paused</h2>
+        <div class="menu-buttons">
+            <button id="resume-game" class="btn btn-primary">Resume</button>
+            <button id="restart-game" class="btn btn-secondary">Restart</button>
+            <button id="quit-game" class="btn btn-secondary">Main Menu</button>
+        </div>
+    </div>
+    
+    <!-- Achievements Panel -->
+    <div id="achievements-panel" class="panel">
+        <div class="panel-header">
+            <h2>Achievements</h2>
+            <button class="close-btn">&times;</button>
+        </div>
+        <div id="achievements-list" class="panel-content"></div>
+    </div>
+    
+    <!-- Leaderboard Panel -->
+    <div id="leaderboard-panel" class="panel">
+        <div class="panel-header">
+            <h2>Leaderboard</h2>
+            <button class="close-btn">&times;</button>
+        </div>
+        <div id="leaderboard-list" class="panel-content"></div>
+    </div>
+    
+    <!-- Controls Panel -->
+    <div id="controls-panel" class="panel">
+        <div class="panel-header">
+            <h2>Controls</h2>
+            <button class="close-btn">&times;</button>
+        </div>
+        <div class="panel-content">
+            <div class="control-item">
+                <span class="key">W / ↑</span>
+                <span class="description">Move Forward</span>
+            </div>
+            <div class="control-item">
+                <span class="key">S / ↓</span>
+                <span class="description">Move Backward</span>
+            </div>
+            <div class="control-item">
+                <span class="key">A / ←</span>
+                <span class="description">Move Left</span>
+            </div>
+            <div class="control-item">
+                <span class="key">D / →</span>
+                <span class="description">Move Right</span>
+            </div>
+            <div class="control-item">
+                <span class="key">Space</span>
+                <span class="description">Boost</span>
+            </div>
+            <div class="control-item">
+                <span class="key">R</span>
+                <span class="description">Recycle (Lose mass for points)</span>
+            </div>
+            <div class="control-item">
+                <span class="key">ESC</span>
+                <span class="description">Pause</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Notification System -->
+    <div id="notification-container"></div>
+    
+    <!-- Tier Up Effect -->
+    <div id="tier-up-effect" class="tier-up-effect"></div>
+    
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>
