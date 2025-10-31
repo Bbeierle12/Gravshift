@@ -86,6 +86,8 @@ The optimized build will be in the `dist/` directory.
 | **D / →** | Move Right |
 | **Space** | Boost |
 | **R** | Recycle (Convert mass to points) |
+| **B** | Toggle Build Mode |
+| **1-3** | Select Building (in Build Mode) |
 | **Tab** | Toggle Sidebar |
 | **F3** | Toggle Debug Info |
 | **ESC** | Pause |
@@ -98,6 +100,37 @@ The optimized build will be in the `dist/` directory.
 - **8 Tiers with smoother progression**: 3, 8, 18, 35, 60, 100, 150, 250 mass
 - Each tier increases difficulty and spawn rates
 - Tier progress bar shows advancement to next tier
+
+### 🏗️ Building System (NEW!)
+- **Press B** to enter build mode
+- **Collect Resources** from absorbed debris:
+  - 🔷 **Plastic**: Common material
+  - ⚙️ **Metal**: Structural component
+  - 🌿 **Organic**: Living matter
+  - 🌱 **Seeds**: For planting trees
+  - 💨 **Oxygen**: Life support (drains over time)
+
+### Available Buildings
+1. **Recycler** (Cost: 10 Plastic, 5 Metal)
+   - Converts nearby debris into seeds
+   - Passive resource generation
+   - Press **1** to select
+
+2. **Tree** (Cost: 1 Seed, 5 Organic)
+   - Generates oxygen constantly
+   - Improves environmental health
+   - Press **2** to select
+
+3. **Oxygen Generator** (Cost: 20 Metal, 10 Plastic)
+   - High-output oxygen production
+   - Sustains life in harsh zones
+   - Press **3** to select
+
+### Environmental Zones
+- Colored zones indicate environmental health
+- **Red** → **Yellow** → **Green** as health improves
+- Trees within zones improve their health
+- Healthy zones support better resource generation
 
 ### Missions
 - Complete objectives for bonus points

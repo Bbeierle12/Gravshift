@@ -6,6 +6,9 @@ import { AudioManager } from './AudioManager.js';
 import { UIManager } from './UIManager.js';
 import { RenderManager } from './RenderManager.js';
 import { InputManager } from './InputManager.js';
+import { ResourceSystem } from './ResourceSystem.js';
+import { BuildingSystem, BuildingType, BUILDING_CONFIGS } from './BuildingSystem.js';
+import { EnvironmentalSystem } from './EnvironmentalSystem.js';
 
 class GravshiftGame {
     constructor() {
@@ -19,6 +22,15 @@ class GravshiftGame {
         this.ui = new UIManager(this.gameState);
         this.render = new RenderManager(this.engine);
         this.input = new InputManager();
+        
+        // Initialize new systems
+        this.resources = new ResourceSystem();
+        this.buildings = new BuildingSystem(this.engine.scene);
+        this.environment = new EnvironmentalSystem(this.engine.scene);
+        
+        // Building mode state
+        this.buildMode = false;
+        this.selectedBuildingType = null;
         
         // Game state
         this.isRunning = false;
@@ -59,13 +71,42 @@ class GravshiftGame {
             return false;
         });
         
-        // Number keys 1-9 for quick actions (extensible for future features)
-        for (let i = 1; i <= 9; i++) {
-            this.input.registerHotkey(i.toString(), () => {
-                // Reserved for future quick-select features
-                return true;
-            });
-        }
+        // B - Toggle build mode
+        this.input.registerHotkey('b', () => {
+            if (this.isRunning && !this.isPaused) {
+                this.toggleBuildMode();
+            }
+            return false;
+        });
+        
+        // Number keys 1-3 for building selection
+        this.input.registerHotkey('1', () => {
+            if (this.buildMode) {
+                this.selectBuilding(BuildingType.RECYCLER);
+            }
+            return false;
+        });
+        
+        this.input.registerHotkey('2', () => {
+            if (this.buildMode) {
+                this.selectBuilding(BuildingType.TREE);
+            }
+            return false;
+        });
+        
+        this.input.registerHotkey('3', () => {
+            if (this.buildMode) {
+                this.selectBuilding(BuildingType.OXYGEN_GENERATOR);
+            }
+            return false;
+        });
+        
+        // Mouse click for building placement
+        window.addEventListener('click', (e) => {
+            if (this.buildMode && this.selectedBuildingType && !e.target.closest('.menu, .panel')) {
+                this.tryPlaceBuilding();
+            }
+        });
     }
 
     setupGameEvents() {
@@ -92,9 +133,20 @@ class GravshiftGame {
         // Start first mission
         this.gameState.startNewMission();
         
+        // Initialize environmental zones
+        this.environment.createZone(new THREE.Vector3(0, 0, 0), 50, 10);
+        this.environment.createZone(new THREE.Vector3(40, 0, 40), 40, 5);
+        this.environment.createZone(new THREE.Vector3(-40, 0, -40), 40, 5);
+        
+        // Subscribe to resource updates
+        this.resources.subscribe(resources => {
+            this.updateResourceDisplay(resources);
+        });
+        
         // Show HUD
         this.ui.showHUD();
         this.ui.updateHUD();
+        this.updateResourceDisplay(this.resources.getResources());
         
         // Start ambient audio
         this.audio.startAmbient();
@@ -164,6 +216,18 @@ class GravshiftGame {
         
         // Spawn and update all entities (consolidated)
         this.updateEntities(deltaTime);
+        
+        // Update new systems
+        this.buildings.update(deltaTime);
+        this.environment.updateZones(deltaTime, this.buildings.getBuildings());
+        
+        // Process building effects
+        const debris = this.engine.debrisPool.getActive();
+        this.buildings.processRecyclers(deltaTime, debris, this.resources);
+        this.buildings.processOxygenGeneration(deltaTime, this.resources);
+        
+        // Drain oxygen over time
+        this.resources.drainOxygen(deltaTime, 0.5);
         
         // Check collisions
         this.checkCollisions();
@@ -348,6 +412,16 @@ class GravshiftGame {
         // Add mass and check for events
         const result = this.gameState.addMass(debrisMass * 0.5);
         
+        // Award resources based on debris type
+        const resourceType = Math.random();
+        if (resourceType < 0.4) {
+            this.resources.addResource('plastic', debrisMass * 0.3);
+        } else if (resourceType < 0.7) {
+            this.resources.addResource('metal', debrisMass * 0.2);
+        } else {
+            this.resources.addResource('organic', debrisMass * 0.25);
+        }
+        
         // Update player size
         this.engine.updatePlayer(this.gameState.mass);
         this.effects.updatePlayerGlow(this.gameState.mass);
@@ -381,6 +455,122 @@ class GravshiftGame {
         
         // Remove debris
         this.engine.debrisPool.release(debris);
+    }
+    
+    // Building mode methods
+    toggleBuildMode() {
+        this.buildMode = !this.buildMode;
+        const buildUI = document.getElementById('build-ui');
+        if (buildUI) {
+            buildUI.style.display = this.buildMode ? 'block' : 'none';
+        }
+        console.log(`Build mode: ${this.buildMode ? 'ON' : 'OFF'}`);
+    }
+    
+    selectBuilding(type) {
+        this.selectedBuildingType = type;
+        const config = BUILDING_CONFIGS[type];
+        console.log(`Selected: ${config.name}`);
+        
+        // Update UI to show selection
+        document.querySelectorAll('#build-ui .building-option').forEach(el => {
+            el.classList.remove('selected');
+        });
+        const option = document.querySelector(`#build-ui .building-option[data-type="${type}"]`);
+        if (option) {
+            option.classList.add('selected');
+        }
+    }
+    
+    tryPlaceBuilding() {
+        if (!this.selectedBuildingType) return;
+        
+        const config = BUILDING_CONFIGS[this.selectedBuildingType];
+        
+        // Check if player can afford it
+        if (!this.resources.canAfford(config.cost)) {
+            console.log('Not enough resources!');
+            this.ui.showNotification('❌ Not enough resources', '', 'error');
+            return;
+        }
+        
+        // Calculate placement position in front of player
+        const camera = this.engine.camera;
+        const direction = new THREE.Vector3();
+        camera.getWorldDirection(direction);
+        direction.y = 0; // Keep on ground plane
+        direction.normalize();
+        
+        const placePosition = this.playerPosition.clone()
+            .add(direction.multiplyScalar(10));
+        placePosition.y = 0; // Place on ground
+        
+        // Try to place building
+        const building = this.buildings.placeBuilding(
+            this.selectedBuildingType,
+            placePosition
+        );
+        
+        if (building) {
+            // Deduct resources
+            this.resources.deductCosts(config.cost);
+            console.log(`Placed ${config.name}!`);
+            this.ui.showNotification(`✅ ${config.name} placed`, config.effect, 'success');
+            this.audio.playAbsorption(1); // Use absorption sound for building placement
+        } else {
+            console.log('Cannot place building here - too close to another building!');
+            this.ui.showNotification('❌ Cannot place here', 'Too close to another building', 'error');
+        }
+    }
+    
+    updateResourceDisplay(resources) {
+        const resourcesEl = document.getElementById('resources');
+        if (resourcesEl) {
+            resourcesEl.innerHTML = `
+                <div class="resource-item">
+                    <span class="resource-icon">🔷</span>
+                    <span class="resource-label">Plastic:</span>
+                    <span class="resource-value">${Math.floor(resources.plastic)}</span>
+                </div>
+                <div class="resource-item">
+                    <span class="resource-icon">⚙️</span>
+                    <span class="resource-label">Metal:</span>
+                    <span class="resource-value">${Math.floor(resources.metal)}</span>
+                </div>
+                <div class="resource-item">
+                    <span class="resource-icon">🌿</span>
+                    <span class="resource-label">Organic:</span>
+                    <span class="resource-value">${Math.floor(resources.organic)}</span>
+                </div>
+                <div class="resource-item">
+                    <span class="resource-icon">🌱</span>
+                    <span class="resource-label">Seeds:</span>
+                    <span class="resource-value">${Math.floor(resources.seeds)}</span>
+                </div>
+                <div class="resource-item ${resources.oxygen < 30 ? 'low-oxygen' : ''}">
+                    <span class="resource-icon">💨</span>
+                    <span class="resource-label">Oxygen:</span>
+                    <span class="resource-value">${Math.floor(resources.oxygen)}%</span>
+                </div>
+            `;
+        }
+        
+        // Update building costs display
+        if (this.buildMode) {
+            this.updateBuildingCostsDisplay(resources);
+        }
+    }
+    
+    updateBuildingCostsDisplay(resources) {
+        Object.values(BuildingType).forEach(type => {
+            const config = BUILDING_CONFIGS[type];
+            const option = document.querySelector(`#build-ui .building-option[data-type="${type}"]`);
+            if (option) {
+                const canAfford = this.resources.canAfford(config.cost);
+                option.classList.toggle('affordable', canAfford);
+                option.classList.toggle('unaffordable', !canAfford);
+            }
+        });
     }
 }
 
