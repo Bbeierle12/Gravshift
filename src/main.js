@@ -32,6 +32,11 @@ class GravshiftGame {
         this.buildMode = false;
         this.selectedBuildingType = null;
         
+        // Camera rotation state
+        this.isDragging = false;
+        this.lastMouseX = 0;
+        this.lastMouseY = 0;
+        
         // Gravity field state
         this.gravityMode = 'neutral'; // 'attract', 'repel', 'neutral'
         this.gravityStrength = 15;
@@ -119,6 +124,45 @@ class GravshiftGame {
             if (this.buildMode && this.selectedBuildingType && !e.target.closest('.menu, .panel')) {
                 this.tryPlaceBuilding();
             }
+        });
+        
+        // Mouse drag for camera rotation
+        window.addEventListener('mousedown', (e) => {
+            // Only start drag if left button and not in build mode
+            if (e.button === 0 && !this.buildMode && !e.target.closest('.menu, .panel, .sidebar')) {
+                this.isDragging = true;
+                this.lastMouseX = e.clientX;
+                this.lastMouseY = e.clientY;
+                document.body.style.cursor = 'grabbing';
+            }
+        });
+        
+        window.addEventListener('mousemove', (e) => {
+            if (this.isDragging && this.isRunning && !this.isPaused) {
+                const deltaX = e.clientX - this.lastMouseX;
+                const deltaY = e.clientY - this.lastMouseY;
+                
+                // Rotate camera based on mouse movement
+                const sensitivity = 0.005;
+                this.engine.rotateCameraH(-deltaX * sensitivity);
+                this.engine.rotateCameraV(-deltaY * sensitivity);
+                
+                this.lastMouseX = e.clientX;
+                this.lastMouseY = e.clientY;
+            }
+        });
+        
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 0) {
+                this.isDragging = false;
+                document.body.style.cursor = 'default';
+            }
+        });
+        
+        // Stop dragging if mouse leaves window
+        window.addEventListener('mouseleave', () => {
+            this.isDragging = false;
+            document.body.style.cursor = 'default';
         });
         
         // Mouse wheel for zoom and gravity strength adjustment
@@ -611,33 +655,44 @@ class GravshiftGame {
     
     tryPlaceBuilding() {
         if (!this.selectedBuildingType) return;
-        
+
         const config = BUILDING_CONFIGS[this.selectedBuildingType];
-        
+
         // Check if player can afford it
         if (!this.resources.canAfford(config.cost)) {
             console.log('Not enough resources!');
             this.ui.showNotification('❌ Not enough resources', '', 'error');
             return;
         }
-        
-        // Calculate placement position in front of player
-        const camera = this.engine.camera;
-        const direction = new THREE.Vector3();
-        camera.getWorldDirection(direction);
-        direction.y = 0; // Keep on ground plane
-        direction.normalize();
-        
-        const placePosition = this.playerPosition.clone()
-            .add(direction.multiplyScalar(10));
-        placePosition.y = 0; // Place on ground
-        
+
+        let placePosition;
+
+        // Special handling for trees - snap to zone surface
+        if (this.selectedBuildingType === BuildingType.TREE) {
+            placePosition = this.findNearestZonePosition();
+            if (!placePosition) {
+                this.ui.showNotification('❌ No zone nearby', 'Trees must be placed on environmental zones', 'error');
+                return;
+            }
+        } else {
+            // Calculate placement position in front of player for other buildings
+            const camera = this.engine.camera;
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            direction.y = 0; // Keep on ground plane
+            direction.normalize();
+
+            placePosition = this.playerPosition.clone()
+                .add(direction.multiplyScalar(10));
+            // Keep building at player's current height instead of forcing to ground
+        }
+
         // Try to place building
         const building = this.buildings.placeBuilding(
             this.selectedBuildingType,
             placePosition
         );
-        
+
         if (building) {
             // Deduct resources
             this.resources.deductCosts(config.cost);
@@ -648,6 +703,47 @@ class GravshiftGame {
             console.log('Cannot place building here - too close to another building!');
             this.ui.showNotification('❌ Cannot place here', 'Too close to another building', 'error');
         }
+    }
+
+    findNearestZonePosition() {
+        // Get all zones
+        const zones = this.environment.getZones();
+        if (zones.length === 0) return null;
+
+        // Calculate target position in front of player
+        const camera = this.engine.camera;
+        const direction = new THREE.Vector3();
+        camera.getWorldDirection(direction);
+        direction.normalize();
+
+        const targetPosition = this.playerPosition.clone()
+            .add(direction.multiplyScalar(15));
+
+        // Find nearest zone to target position
+        let nearestZone = null;
+        let minDistance = Infinity;
+
+        zones.forEach(zone => {
+            const distance = zone.position.distanceTo(targetPosition);
+            if (distance < minDistance && distance < zone.radius + 20) {
+                minDistance = distance;
+                nearestZone = zone;
+            }
+        });
+
+        if (!nearestZone) return null;
+
+        // Calculate position on zone surface
+        // Get direction from zone center to target
+        const toTarget = new THREE.Vector3()
+            .subVectors(targetPosition, nearestZone.position)
+            .normalize();
+
+        // Place on surface of zone
+        const surfacePosition = nearestZone.position.clone()
+            .add(toTarget.multiplyScalar(nearestZone.radius));
+
+        return surfacePosition;
     }
     
     updateResourceDisplay(resources) {

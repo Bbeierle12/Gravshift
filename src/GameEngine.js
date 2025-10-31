@@ -72,6 +72,8 @@ export class GameEngine {
         // Camera settings
         this.camera.position.z = 50;
         this.cameraDistance = 50; // Initial camera distance
+        this.cameraAngleH = 0; // Horizontal rotation angle (yaw)
+        this.cameraAngleV = 0.3; // Vertical rotation angle (pitch), slight downward angle
         this.cameraOffset = new THREE.Vector3(0, 15, 50);
         this.cameraShake = { x: 0, y: 0, intensity: 0 };
         
@@ -365,9 +367,12 @@ export class GameEngine {
     updateCamera(playerPosition, deltaTime) {
         if (!this.player) return;
         
-        // Update camera offset based on distance
-        this.cameraOffset.y = this.cameraDistance * 0.3; // Height proportional to distance
-        this.cameraOffset.z = this.cameraDistance;
+        // Calculate camera offset based on angles and distance
+        const offsetX = Math.sin(this.cameraAngleH) * this.cameraDistance;
+        const offsetZ = Math.cos(this.cameraAngleH) * this.cameraDistance;
+        const offsetY = Math.sin(this.cameraAngleV) * this.cameraDistance * 0.5 + this.cameraDistance * 0.2;
+        
+        this.cameraOffset.set(offsetX, offsetY, offsetZ);
         
         // Smooth camera follow
         const targetPosition = playerPosition.clone().add(this.cameraOffset);
@@ -393,6 +398,15 @@ export class GameEngine {
     
     setCameraDistance(distance) {
         this.cameraDistance = Math.max(5, Math.min(100, distance));
+    }
+    
+    rotateCameraH(deltaAngle) {
+        this.cameraAngleH += deltaAngle;
+    }
+    
+    rotateCameraV(deltaAngle) {
+        // Clamp vertical angle to prevent camera flipping
+        this.cameraAngleV = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, this.cameraAngleV + deltaAngle));
     }
     
     screenShake(intensity = 1) {

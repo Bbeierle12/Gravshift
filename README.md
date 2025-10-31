@@ -92,6 +92,7 @@ The optimized build will be in the `dist/` directory.
 | **Ctrl + Wheel** | Adjust Gravity Strength |
 | **Mouse Wheel** | Zoom Camera In/Out |
 | **+ / -** | Zoom Camera In/Out (Keyboard) |
+| **Left Mouse Drag** | Rotate Camera Angle |
 | **B** | Toggle Build Mode |
 | **1-3** | Select Building (in Build Mode) |
 | **Tab** | Toggle Sidebar |
