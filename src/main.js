@@ -265,9 +265,10 @@ class GravshiftGame {
         const boostMultiplier = 2;
         const acceleration = new THREE.Vector3();
         
-        // Get movement from input manager
+        // Get movement from input manager (now includes Y axis)
         const movement = this.input.getMovementVector();
         acceleration.x = movement.x * moveSpeed;
+        acceleration.y = movement.y * moveSpeed; // Enable vertical movement
         acceleration.z = movement.z * moveSpeed;
         
         // Boost
@@ -376,10 +377,12 @@ class GravshiftGame {
         debris.forEach(d => {
             const distance = d.position.distanceTo(this.playerPosition);
             const debrisRadius = d.geometry.parameters.radius * d.scale.x;
+            const debrisMass = d.userData.mass;
             
             // Check if player can absorb debris
             if (distance < playerRadius + debrisRadius) {
-                if (this.gameState.mass >= debrisRadius * 0.8) {
+                // Player can absorb debris if their mass is larger
+                if (this.gameState.mass > debrisMass * 0.5) {
                     // Absorb
                     this.absorbDebris(d);
                 } else {

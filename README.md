@@ -84,6 +84,8 @@ The optimized build will be in the `dist/` directory.
 | **S / ↓** | Move Backward |
 | **A / ←** | Move Left |
 | **D / →** | Move Right |
+| **Q / Shift** | Ascend (Move Up) |
+| **E / Ctrl** | Descend (Move Down) |
 | **Space** | Boost |
 | **R** | Recycle (Convert mass to points) |
 | **B** | Toggle Build Mode |

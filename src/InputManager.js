@@ -142,7 +142,7 @@ export class InputManager {
         this.hotkeys.clear();
     }
 
-    // Movement vector helper (WASD + Arrow keys)
+    // Movement vector helper (WASD + Arrow keys + Q/E for vertical)
     getMovementVector() {
         const vector = { x: 0, y: 0, z: 0 };
         
@@ -162,10 +162,19 @@ export class InputManager {
             vector.x += 1;
         }
         
-        // Normalize if moving diagonally
-        if (vector.x !== 0 && vector.z !== 0) {
-            const length = Math.sqrt(vector.x * vector.x + vector.z * vector.z);
+        // Up/Down (Q/E keys for ascend/descend)
+        if (this.isAnyKeyPressed('q', 'shift')) {
+            vector.y += 1; // Ascend
+        }
+        if (this.isAnyKeyPressed('e', 'control')) {
+            vector.y -= 1; // Descend
+        }
+        
+        // Normalize if moving in multiple directions
+        const length = Math.sqrt(vector.x * vector.x + vector.y * vector.y + vector.z * vector.z);
+        if (length > 0) {
             vector.x /= length;
+            vector.y /= length;
             vector.z /= length;
         }
         
