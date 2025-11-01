@@ -51,8 +51,8 @@ class GravshiftGame {
         
         // Carried debris system
         this.carriedDebris = [];
-        this.maxCarriedDebris = 5;
-        this.grabRange = 5;
+        this.maxCarriedDebris = 20; // Increased capacity
+        this.grabRange = 15; // Auto-grab range
         
         // Game settings
         this.debrisSpawnTimer = 0;
@@ -201,13 +201,8 @@ class GravshiftGame {
             return false;
         });
         
-        // E - Grab/Release debris
-        this.input.registerHotkey('e', () => {
-            if (this.isRunning && !this.isPaused && !this.buildMode) {
-                this.grabNearbyDebris();
-            }
-            return false;
-        });
+        // E - Grab/Release debris (removed - now auto-grabs)
+        // R key now handled in handleInput for harvesting
     }
 
     setupGameEvents() {
@@ -341,7 +336,7 @@ class GravshiftGame {
         // Process absorbed debris
         if (absorbed && absorbed.length > 0) {
             absorbed.forEach(item => {
-                this.processRecyclerAbsorption(item.debris, item.recycler);
+                this.processRecyclerAbsorption(item.debris, item.recycler, item.seeking || false);
             });
         }
         
@@ -395,8 +390,43 @@ class GravshiftGame {
         // Apply gravity field to debris
         this.applyGravityField(deltaTime);
         
+        // Update debris seeking recyclers
+        this.updateSeekingDebris(deltaTime);
+        
         // Update all active entities in one pass
         this.engine.update(deltaTime);
+    }
+    
+    updateSeekingDebris(deltaTime) {
+        const debris = this.engine.debrisPool.getActive();
+        const recyclers = this.engine.recyclers;
+        
+        if (!recyclers || recyclers.length === 0) return;
+        
+        debris.forEach(d => {
+            if (d.userData.seekingRecycler) {
+                // Find nearest recycler
+                let nearest = null;
+                let minDistance = Infinity;
+                
+                recyclers.forEach(recycler => {
+                    const distance = d.position.distanceTo(recycler.position);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        nearest = recycler;
+                    }
+                });
+                
+                if (nearest) {
+                    // Move towards nearest recycler
+                    const direction = new THREE.Vector3()
+                        .subVectors(nearest.position, d.position)
+                        .normalize();
+                    
+                    d.userData.velocity.add(direction.multiplyScalar(deltaTime * 50));
+                }
+            }
+        });
     }
 
     handleInput(deltaTime) {
@@ -425,13 +455,20 @@ class GravshiftGame {
         
         // Recycle (R key)
         if (this.input.isRecyclePressed() && (!this.lastRecycle || Date.now() - this.lastRecycle > 1000)) {
-            const points = this.gameState.recycle();
-            if (points > 0) {
-                this.effects.createRecycleEffect(this.playerPosition);
-                this.audio.playRecycle();
-                this.ui.showNotification('♻️ Recycled!', `+${points} points`, 'normal');
-                this.engine.updatePlayer(this.gameState.mass);
+            // Harvest carried debris for resources
+            if (this.carriedDebris.length > 0) {
+                this.harvestCarriedDebris();
                 this.lastRecycle = Date.now();
+            } else {
+                // Old behavior - recycle carried mass if no debris
+                const points = this.gameState.recycle();
+                if (points > 0) {
+                    this.effects.createRecycleEffect(this.playerPosition);
+                    this.audio.playRecycle();
+                    this.ui.showNotification('♻️ Recycled!', `+${points} points`, 'normal');
+                    this.engine.updatePlayer(this.gameState.mass);
+                    this.lastRecycle = Date.now();
+                }
             }
         }
         
@@ -514,33 +551,30 @@ class GravshiftGame {
         const playerRadius = this.player ? this.player.userData.radius : 1;
         
         debris.forEach(d => {
-            // Skip debris being carried
+            // Skip debris already being carried
             if (this.carriedDebris.includes(d)) return;
             
             const distance = d.position.distanceTo(this.playerPosition);
             const debrisRadius = d.geometry.parameters.radius * d.scale.x;
-            const debrisMass = d.userData.mass;
             
-            // Check if player can absorb debris
-            if (distance < playerRadius + debrisRadius) {
-                // Player can absorb debris if their mass is larger
-                if (this.gameState.mass > debrisMass * 0.5) {
-                    // Absorb
-                    this.absorbDebris(d);
-                } else {
-                    // Collision (push back)
-                    const pushDirection = new THREE.Vector3()
-                        .subVectors(this.playerPosition, d.position)
-                        .normalize();
-                    this.playerVelocity.add(pushDirection.multiplyScalar(5));
-                    this.effects.createCollisionEffect(d.position);
-                    this.audio.playCollision(0.5);
-                }
+            // Auto-grab debris when close enough
+            if (distance < this.grabRange && this.carriedDebris.length < this.maxCarriedDebris) {
+                this.carriedDebris.push(d);
+                d.userData.isCarried = true;
+                
+                // Small visual effect
+                this.effects.createAbsorptionEffect(
+                    d.position,
+                    this.playerPosition,
+                    d.material.color.getHex()
+                );
+                this.audio.playAbsorption(0.3);
             }
         });
     }
 
     absorbDebris(debris) {
+        // This function is now only used for direct absorption (kept for compatibility)
         const debrisMass = debris.userData.mass;
         const debrisColor = debris.material.color.getHex();
         
@@ -602,46 +636,95 @@ class GravshiftGame {
         this.engine.debrisPool.release(debris);
     }
     
-    // Grab/Release debris system
-    grabNearbyDebris() {
-        if (this.carriedDebris.length >= this.maxCarriedDebris) {
-            this.ui.showNotification('⚠️ Carrying too much!', `Max ${this.maxCarriedDebris} debris`, 'normal');
-            return;
-        }
+    // Harvest carried debris when R is pressed
+    harvestCarriedDebris() {
+        if (this.carriedDebris.length === 0) return;
         
-        // Find nearest debris within grab range
-        const debris = this.engine.debrisPool.getActive();
-        let nearest = null;
-        let minDistance = this.grabRange;
+        const totalDebris = this.carriedDebris.length;
+        const harvestCount = Math.ceil(totalDebris * 0.4); // 40% harvested for resources
+        const recycleCount = totalDebris - harvestCount; // 60% sent to recyclers
         
-        debris.forEach(d => {
-            // Skip debris already being carried
-            if (this.carriedDebris.includes(d)) return;
+        let totalResources = 0;
+        let totalPoints = 0;
+        let resourceCount = 0;
+        let pollutionCount = 0;
+        
+        // Harvest portion for building resources
+        for (let i = 0; i < harvestCount && this.carriedDebris.length > 0; i++) {
+            const debris = this.carriedDebris.shift();
+            const debrisMass = debris.userData.mass;
+            const isResource = debris.userData.isResource;
             
-            const distance = d.position.distanceTo(this.playerPosition);
-            if (distance < minDistance) {
-                minDistance = distance;
-                nearest = d;
+            if (isResource) {
+                // Resource debris - give specific resource type and more
+                const resourceType = debris.userData.resourceType;
+                const resourceAmount = debrisMass * 5; // 5x for resources
+                
+                if (resourceType === 'organic') {
+                    this.resources.addResource('organic', resourceAmount);
+                } else if (resourceType === 'metal') {
+                    this.resources.addResource('metal', resourceAmount);
+                } else if (resourceType === 'plastic') {
+                    this.resources.addResource('plastic', resourceAmount);
+                } else if (resourceType === 'seeds') {
+                    this.resources.addResource('seeds', Math.floor(resourceAmount * 0.5));
+                }
+                
+                totalResources += resourceAmount;
+                resourceCount++;
+                
+                // Bigger effect for resources
+                this.effects.createRecycleEffect(debris.position);
+                this.engine.spawnParticles(debris.position, 15, debris.material.color.getHex());
+            } else {
+                // Pollution debris - minimal resources, needs recycling
+                const resourceAmount = debrisMass * 0.5; // Only 0.5x for pollution
+                
+                // Pollution just gives small random resources
+                const resourceType = Math.random();
+                if (resourceType < 0.5) {
+                    this.resources.addResource('plastic', resourceAmount);
+                } else {
+                    this.resources.addResource('metal', resourceAmount * 0.5);
+                }
+                
+                totalResources += resourceAmount;
+                pollutionCount++;
             }
-        });
-        
-        if (nearest) {
-            // Grab the debris
-            this.carriedDebris.push(nearest);
-            nearest.userData.isCarried = true;
             
-            // Visual effect
-            this.effects.createAbsorptionEffect(
-                nearest.position,
-                this.playerPosition,
-                nearest.material.color.getHex()
-            );
-            
-            this.audio.playAbsorption(0.5);
-            this.ui.showNotification('📦 Grabbed debris', `Carrying ${this.carriedDebris.length}/${this.maxCarriedDebris}`, 'normal');
-        } else {
-            this.ui.showNotification('❌ No debris nearby', `Get within ${this.grabRange}m`, 'normal');
+            // Remove debris
+            this.engine.debrisPool.release(debris);
         }
+        
+        // Remaining debris automatically seeks nearest recycler
+        this.carriedDebris.forEach(debris => {
+            debris.userData.seekingRecycler = true;
+            debris.userData.isCarried = false;
+        });
+        this.carriedDebris = [];
+        
+        // Show notification
+        this.effects.createRecycleEffect(this.playerPosition);
+        this.audio.playRecycle();
+        
+        let message = `+${Math.floor(totalResources)} resources`;
+        if (resourceCount > 0) {
+            message += ` (${resourceCount} 🌟 resources!)`;
+        }
+        if (pollutionCount > 0) {
+            message += ` (${pollutionCount} pollution)`;
+        }
+        
+        this.ui.showNotification(
+            '♻️ Harvested!', 
+            `${message} | ${recycleCount} to recyclers`, 
+            'success'
+        );
+    }
+    
+    // Old grab method removed - now auto-grabs
+    grabNearbyDebris() {
+        // Functionality merged into checkCollisions for auto-grab
     }
     
     updateCarriedDebris(deltaTime) {
@@ -674,7 +757,7 @@ class GravshiftGame {
         });
     }
     
-    processRecyclerAbsorption(debris, recycler) {
+    processRecyclerAbsorption(debris, recycler, seeking = false) {
         // Trigger absorption effect in engine
         const debrisData = this.engine.absorbDebris(debris, recycler);
         
@@ -684,31 +767,49 @@ class GravshiftGame {
             this.carriedDebris.splice(index, 1);
         }
         
-        // Award resources based on debris mass
-        const debrisMass = debrisData.mass;
-        const resourceAmount = debrisMass * 2; // Higher reward for recycling
-        
-        // Random resource type
-        const resourceType = Math.random();
-        if (resourceType < 0.3) {
-            this.resources.addResource('plastic', resourceAmount);
-        } else if (resourceType < 0.6) {
-            this.resources.addResource('metal', resourceAmount);
-        } else if (resourceType < 0.9) {
-            this.resources.addResource('organic', resourceAmount);
-        } else {
-            this.resources.addResource('seeds', Math.floor(resourceAmount * 0.5));
-        }
-        
-        // Add points
-        this.gameState.addScore(Math.floor(debrisMass * 10));
-        
-        // Play sound and show notification
-        this.audio.playRecycle();
-        
-        // Show notification when carrying count changes
-        if (this.carriedDebris.length === 0) {
-            this.ui.showNotification('♻️ All debris recycled!', `+${Math.floor(resourceAmount)} resources`, 'success');
+        // Award resources and points for seeking debris
+        if (seeking) {
+            const debrisMass = debrisData.mass;
+            const isResource = debris.userData.isResource;
+            
+            if (isResource) {
+                // Resources are better harvested than recycled
+                const resourceAmount = debrisMass * 2;
+                const resourceType = debris.userData.resourceType;
+                
+                if (resourceType === 'organic') {
+                    this.resources.addResource('organic', resourceAmount);
+                } else if (resourceType === 'metal') {
+                    this.resources.addResource('metal', resourceAmount);
+                } else if (resourceType === 'plastic') {
+                    this.resources.addResource('plastic', resourceAmount);
+                } else if (resourceType === 'seeds') {
+                    this.resources.addResource('seeds', Math.floor(resourceAmount * 0.5));
+                }
+                
+                this.gameState.addScore(Math.floor(debrisMass * 10));
+            } else {
+                // Pollution gives more when recycled properly - this is the main gameplay loop!
+                const resourceAmount = debrisMass * 3; // 3x for pollution recycling
+                
+                // Pollution recycling gives random resources
+                const resourceType = Math.random();
+                if (resourceType < 0.3) {
+                    this.resources.addResource('plastic', resourceAmount);
+                } else if (resourceType < 0.6) {
+                    this.resources.addResource('metal', resourceAmount);
+                } else if (resourceType < 0.9) {
+                    this.resources.addResource('organic', resourceAmount);
+                } else {
+                    this.resources.addResource('seeds', Math.floor(resourceAmount * 0.5));
+                }
+                
+                // Big points for recycling pollution!
+                this.gameState.addScore(Math.floor(debrisMass * 20));
+            }
+            
+            // Play sound (quieter for seeking debris)
+            this.audio.playRecycle();
         }
     }
     
@@ -738,8 +839,8 @@ class GravshiftGame {
         const isAttract = this.gravityMode === 'attract';
         
         debris.forEach(d => {
-            // Skip debris being carried
-            if (this.carriedDebris.includes(d)) return;
+            // Skip debris being carried or seeking recycler
+            if (this.carriedDebris.includes(d) || d.userData.seekingRecycler) return;
             
             const toPlayer = new THREE.Vector3().subVectors(this.playerPosition, d.position);
             const distance = toPlayer.length();

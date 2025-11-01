@@ -135,31 +135,51 @@ export class GameEngine {
         const size = 0.5 + Math.random() * 1.5;
         const geometry = new THREE.IcosahedronGeometry(size, 0);
         
-        // Random color based on tier
-        const colors = [
-            0x64c8ff, // Blue
-            0x00ff88, // Green
-            0xffc864, // Orange
-            0xff6464, // Red
-            0xc864ff  // Purple
-        ];
+        // Determine if this is resource or pollution (10% resource, 90% pollution)
+        const isResource = Math.random() < 0.1;
+        
+        let color, emissiveColor;
+        
+        if (isResource) {
+            // Resource debris - bright, valuable colors
+            const resourceColors = [
+                { color: 0x00ff88, emissive: 0x00aa44 }, // Green - organic
+                { color: 0xffc864, emissive: 0xaa8432 }, // Gold - metal
+                { color: 0x64c8ff, emissive: 0x3264aa }, // Blue - plastic
+                { color: 0xc864ff, emissive: 0x8432aa }  // Purple - seeds
+            ];
+            const chosen = resourceColors[Math.floor(Math.random() * resourceColors.length)];
+            color = chosen.color;
+            emissiveColor = chosen.emissive;
+        } else {
+            // Pollution debris - dull, gray/brown colors
+            const pollutionColors = [
+                { color: 0x4a4a4a, emissive: 0x2a2a2a }, // Dark gray
+                { color: 0x665544, emissive: 0x332211 }, // Brown
+                { color: 0x554455, emissive: 0x221122 }, // Dark purple-gray
+                { color: 0x444444, emissive: 0x222222 }  // Darker gray
+            ];
+            const chosen = pollutionColors[Math.floor(Math.random() * pollutionColors.length)];
+            color = chosen.color;
+            emissiveColor = chosen.emissive;
+        }
         
         const material = new THREE.MeshStandardMaterial({
-            color: colors[Math.floor(Math.random() * colors.length)],
-            emissive: colors[Math.floor(Math.random() * colors.length)],
-            emissiveIntensity: 0.3,
-            roughness: 0.5,
-            metalness: 0.5
+            color: color,
+            emissive: emissiveColor,
+            emissiveIntensity: isResource ? 0.5 : 0.2,
+            roughness: isResource ? 0.3 : 0.7,
+            metalness: isResource ? 0.7 : 0.3
         });
         
         const mesh = new THREE.Mesh(geometry, material);
         
-        // Add glow effect
+        // Add glow effect (brighter for resources)
         const glowGeometry = new THREE.IcosahedronGeometry(size * 1.2, 0);
         const glowMaterial = new THREE.MeshBasicMaterial({
-            color: colors[Math.floor(Math.random() * colors.length)],
+            color: color,
             transparent: true,
-            opacity: 0.2,
+            opacity: isResource ? 0.3 : 0.1,
             side: THREE.BackSide
         });
         const glow = new THREE.Mesh(glowGeometry, glowMaterial);
@@ -174,10 +194,21 @@ export class GameEngine {
                 Math.random() * 0.02 - 0.01
             ),
             mass: size,
-            glow: glow
+            glow: glow,
+            isResource: isResource, // New property
+            resourceType: isResource ? this.getResourceType(color) : null
         };
         
         return mesh;
+    }
+    
+    getResourceType(color) {
+        // Map colors to resource types
+        if (color === 0x00ff88) return 'organic';
+        if (color === 0xffc864) return 'metal';
+        if (color === 0x64c8ff) return 'plastic';
+        if (color === 0xc864ff) return 'seeds';
+        return 'plastic'; // default
     }
 
     resetDebris(debris) {
@@ -569,6 +600,7 @@ export class GameEngine {
     
     updateRecyclers(currentTime, carriedDebris) {
         const absorbed = []; // Track absorbed debris
+        const allDebris = this.debrisPool.getActive();
         
         this.recyclers.forEach(recycler => {
             // Rotate wireframe globe
@@ -583,10 +615,10 @@ export class GameEngine {
             const opacity = Math.sin(currentTime * 0.002) * 0.2 + 0.6;
             recycler.material.opacity = opacity;
             
-            // Check for debris to absorb
+            const recyclerPos = recycler.position;
+            
+            // Check carried debris for absorption
             if (carriedDebris && carriedDebris.length > 0) {
-                const recyclerPos = recycler.position;
-                
                 carriedDebris.forEach(debris => {
                     const distance = debris.position.distanceTo(recyclerPos);
                     
@@ -602,7 +634,6 @@ export class GameEngine {
                         
                         // Absorb if very close
                         if (distance < recycler.userData.radius * 0.5) {
-                            // Mark for absorption
                             absorbed.push({
                                 debris: debris,
                                 recycler: recycler
@@ -611,6 +642,32 @@ export class GameEngine {
                     }
                 });
             }
+            
+            // Check debris seeking recyclers
+            allDebris.forEach(debris => {
+                if (debris.userData.seekingRecycler) {
+                    const distance = debris.position.distanceTo(recyclerPos);
+                    
+                    // Pull seeking debris strongly
+                    if (distance < recycler.userData.radius * 2) {
+                        const direction = recyclerPos.clone().sub(debris.position).normalize();
+                        const pullForce = recycler.userData.pullStrength * 2;
+                        
+                        debris.userData.velocity.add(
+                            direction.multiplyScalar(pullForce * 0.02)
+                        );
+                        
+                        // Absorb if close
+                        if (distance < recycler.userData.radius * 0.7) {
+                            absorbed.push({
+                                debris: debris,
+                                recycler: recycler,
+                                seeking: true
+                            });
+                        }
+                    }
+                }
+            });
         });
         
         return absorbed; // Return list of absorbed debris for game logic to handle
