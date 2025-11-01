@@ -125,6 +125,10 @@ export class GameEngine {
             (particle) => this.resetParticle(particle),
             400
         );
+        
+        // Debris nodes and recyclers
+        this.debrisNodes = [];
+        this.recyclers = [];
     }
 
     createDebris() {
@@ -411,6 +415,230 @@ export class GameEngine {
     
     screenShake(intensity = 1) {
         this.cameraShake.intensity = intensity;
+    }
+
+    createDebrisNode(position, spawnRate = 2000, maxDebris = 5) {
+        // Create node geometry - a crystalline structure
+        const nodeGeometry = new THREE.OctahedronGeometry(3, 0);
+        const nodeMaterial = new THREE.MeshStandardMaterial({
+            color: 0x00ffff,
+            emissive: 0x00aaaa,
+            emissiveIntensity: 0.6,
+            metalness: 0.8,
+            roughness: 0.2
+        });
+        
+        const node = new THREE.Mesh(nodeGeometry, nodeMaterial);
+        node.position.copy(position);
+        
+        // Add glow effect
+        const glowGeometry = new THREE.OctahedronGeometry(3.5, 0);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.BackSide
+        });
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        node.add(glow);
+        
+        // Add rotating rings around node
+        const ringGeometry = new THREE.TorusGeometry(5, 0.2, 8, 32);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            transparent: true,
+            opacity: 0.5
+        });
+        const ring1 = new THREE.Mesh(ringGeometry, ringMaterial);
+        const ring2 = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring2.rotation.x = Math.PI / 2;
+        node.add(ring1);
+        node.add(ring2);
+        
+        // Node data
+        node.userData = {
+            type: 'debrisNode',
+            spawnRate: spawnRate,
+            maxDebris: maxDebris,
+            lastSpawn: 0,
+            activeDebris: [],
+            rings: [ring1, ring2],
+            glow: glow
+        };
+        
+        this.debrisNodes.push(node);
+        this.scene.add(node);
+        return node;
+    }
+    
+    createRecycler(position, radius = 8) {
+        // Create red wireframe globe
+        const recyclerGeometry = new THREE.SphereGeometry(radius, 16, 16);
+        const recyclerMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const recycler = new THREE.Mesh(recyclerGeometry, recyclerMaterial);
+        recycler.position.copy(position);
+        
+        // Add inner glow sphere
+        const innerGeometry = new THREE.SphereGeometry(radius * 0.9, 16, 16);
+        const innerMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            transparent: true,
+            opacity: 0.1
+        });
+        const innerGlow = new THREE.Mesh(innerGeometry, innerMaterial);
+        recycler.add(innerGlow);
+        
+        // Add particle effect in center
+        const coreGeometry = new THREE.SphereGeometry(1, 8, 8);
+        const coreMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffaa00,
+            emissive: 0xff6600,
+            emissiveIntensity: 1
+        });
+        const core = new THREE.Mesh(coreGeometry, coreMaterial);
+        recycler.add(core);
+        
+        // Recycler data
+        recycler.userData = {
+            type: 'recycler',
+            radius: radius,
+            pullStrength: 100,
+            core: core,
+            innerGlow: innerGlow,
+            pulsePhase: Math.random() * Math.PI * 2
+        };
+        
+        this.recyclers.push(recycler);
+        this.scene.add(recycler);
+        return recycler;
+    }
+    
+    updateDebrisNodes(currentTime, playerPosition) {
+        this.debrisNodes.forEach(node => {
+            // Rotate the node
+            node.rotation.y += 0.01;
+            node.rotation.x += 0.005;
+            
+            // Rotate rings
+            node.userData.rings[0].rotation.z += 0.02;
+            node.userData.rings[1].rotation.y += 0.02;
+            
+            // Pulse glow
+            const pulse = Math.sin(currentTime * 0.002) * 0.2 + 0.3;
+            node.userData.glow.material.opacity = pulse;
+            
+            // Check if should spawn debris
+            if (currentTime - node.userData.lastSpawn > node.userData.spawnRate &&
+                node.userData.activeDebris.length < node.userData.maxDebris) {
+                
+                // Spawn debris near node
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 5 + Math.random() * 3;
+                const spawnPos = new THREE.Vector3(
+                    node.position.x + Math.cos(angle) * distance,
+                    node.position.y + (Math.random() - 0.5) * 3,
+                    node.position.z + Math.sin(angle) * distance
+                );
+                
+                const velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.5,
+                    (Math.random() - 0.5) * 0.5,
+                    (Math.random() - 0.5) * 0.5
+                );
+                
+                const debris = this.spawnDebris(spawnPos, velocity);
+                node.userData.activeDebris.push(debris);
+                node.userData.lastSpawn = currentTime;
+                
+                // Spawn effect
+                this.spawnParticles(spawnPos, 5, 0x00ffff);
+            }
+            
+            // Clean up collected debris from tracking
+            node.userData.activeDebris = node.userData.activeDebris.filter(debris => 
+                this.debrisPool.getActive().includes(debris)
+            );
+        });
+    }
+    
+    updateRecyclers(currentTime, carriedDebris) {
+        const absorbed = []; // Track absorbed debris
+        
+        this.recyclers.forEach(recycler => {
+            // Rotate wireframe globe
+            recycler.rotation.y += 0.005;
+            recycler.rotation.x += 0.003;
+            
+            // Pulse core
+            const pulse = Math.sin(currentTime * 0.003 + recycler.userData.pulsePhase) * 0.5 + 1;
+            recycler.userData.core.scale.set(pulse, pulse, pulse);
+            
+            // Pulse wireframe opacity
+            const opacity = Math.sin(currentTime * 0.002) * 0.2 + 0.6;
+            recycler.material.opacity = opacity;
+            
+            // Check for debris to absorb
+            if (carriedDebris && carriedDebris.length > 0) {
+                const recyclerPos = recycler.position;
+                
+                carriedDebris.forEach(debris => {
+                    const distance = debris.position.distanceTo(recyclerPos);
+                    
+                    if (distance < recycler.userData.radius * 1.5) {
+                        // Pull debris towards recycler
+                        const direction = recyclerPos.clone().sub(debris.position).normalize();
+                        const pullForce = (1 - distance / (recycler.userData.radius * 1.5)) * 
+                                        recycler.userData.pullStrength;
+                        
+                        debris.userData.velocity.add(
+                            direction.multiplyScalar(pullForce * 0.01)
+                        );
+                        
+                        // Absorb if very close
+                        if (distance < recycler.userData.radius * 0.5) {
+                            // Mark for absorption
+                            absorbed.push({
+                                debris: debris,
+                                recycler: recycler
+                            });
+                        }
+                    }
+                });
+            }
+        });
+        
+        return absorbed; // Return list of absorbed debris for game logic to handle
+    }
+    
+    absorbDebris(debris, recycler) {
+        // Create absorption effect
+        this.spawnParticles(debris.position, 20, 0xff6600);
+        
+        // Flash the recycler
+        recycler.userData.innerGlow.material.opacity = 0.5;
+        setTimeout(() => {
+            if (recycler.userData.innerGlow && recycler.userData.innerGlow.material) {
+                recycler.userData.innerGlow.material.opacity = 0.1;
+            }
+        }, 200);
+        
+        // Store debris data before release
+        const debrisData = {
+            mass: debris.userData.mass || 1,
+            position: debris.position.clone()
+        };
+        
+        // Remove debris
+        this.debrisPool.release(debris);
+        
+        // Return debris data for rewards
+        return debrisData;
     }
 
     onWindowResize() {

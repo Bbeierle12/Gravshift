@@ -49,6 +49,11 @@ class GravshiftGame {
         this.playerVelocity = new THREE.Vector3();
         this.playerPosition = new THREE.Vector3(0, 0, 0);
         
+        // Carried debris system
+        this.carriedDebris = [];
+        this.maxCarriedDebris = 5;
+        this.grabRange = 5;
+        
         // Game settings
         this.debrisSpawnTimer = 0;
         this.debrisSpawnInterval = 2;
@@ -195,6 +200,14 @@ class GravshiftGame {
             }
             return false;
         });
+        
+        // E - Grab/Release debris
+        this.input.registerHotkey('e', () => {
+            if (this.isRunning && !this.isPaused && !this.buildMode) {
+                this.grabNearbyDebris();
+            }
+            return false;
+        });
     }
 
     setupGameEvents() {
@@ -225,6 +238,18 @@ class GravshiftGame {
         this.environment.createZone(new THREE.Vector3(0, 0, 0), 50, 10);
         this.environment.createZone(new THREE.Vector3(40, 0, 40), 40, 5);
         this.environment.createZone(new THREE.Vector3(-40, 0, -40), 40, 5);
+        
+        // Create debris nodes (cyan crystals that spawn debris)
+        this.engine.createDebrisNode(new THREE.Vector3(30, 0, 20), 3000, 5);
+        this.engine.createDebrisNode(new THREE.Vector3(-40, 10, -30), 2500, 4);
+        this.engine.createDebrisNode(new THREE.Vector3(0, -20, 50), 4000, 6);
+        this.engine.createDebrisNode(new THREE.Vector3(50, 5, -40), 3500, 5);
+        
+        // Create recycler globes (red wireframe spheres that absorb debris)
+        this.engine.createRecycler(new THREE.Vector3(60, 0, 0), 10);
+        this.engine.createRecycler(new THREE.Vector3(-60, 15, -20), 8);
+        this.engine.createRecycler(new THREE.Vector3(0, -30, 60), 12);
+        this.engine.createRecycler(new THREE.Vector3(-50, -10, 40), 9);
         
         // Subscribe to resource updates
         this.resources.subscribe(resources => {
@@ -302,8 +327,23 @@ class GravshiftGame {
         this.handleInput(deltaTime);
         this.updatePlayer(deltaTime);
         
+        // Update carried debris positions
+        this.updateCarriedDebris(deltaTime);
+        
         // Spawn and update all entities (consolidated)
         this.updateEntities(deltaTime);
+        
+        // Update debris nodes and recyclers
+        const currentTime = Date.now();
+        this.engine.updateDebrisNodes(currentTime, this.playerPosition);
+        const absorbed = this.engine.updateRecyclers(currentTime, this.carriedDebris);
+        
+        // Process absorbed debris
+        if (absorbed && absorbed.length > 0) {
+            absorbed.forEach(item => {
+                this.processRecyclerAbsorption(item.debris, item.recycler);
+            });
+        }
         
         // Update new systems
         this.buildings.update(deltaTime);
@@ -474,6 +514,9 @@ class GravshiftGame {
         const playerRadius = this.player ? this.player.userData.radius : 1;
         
         debris.forEach(d => {
+            // Skip debris being carried
+            if (this.carriedDebris.includes(d)) return;
+            
             const distance = d.position.distanceTo(this.playerPosition);
             const debrisRadius = d.geometry.parameters.radius * d.scale.x;
             const debrisMass = d.userData.mass;
@@ -559,6 +602,116 @@ class GravshiftGame {
         this.engine.debrisPool.release(debris);
     }
     
+    // Grab/Release debris system
+    grabNearbyDebris() {
+        if (this.carriedDebris.length >= this.maxCarriedDebris) {
+            this.ui.showNotification('⚠️ Carrying too much!', `Max ${this.maxCarriedDebris} debris`, 'normal');
+            return;
+        }
+        
+        // Find nearest debris within grab range
+        const debris = this.engine.debrisPool.getActive();
+        let nearest = null;
+        let minDistance = this.grabRange;
+        
+        debris.forEach(d => {
+            // Skip debris already being carried
+            if (this.carriedDebris.includes(d)) return;
+            
+            const distance = d.position.distanceTo(this.playerPosition);
+            if (distance < minDistance) {
+                minDistance = distance;
+                nearest = d;
+            }
+        });
+        
+        if (nearest) {
+            // Grab the debris
+            this.carriedDebris.push(nearest);
+            nearest.userData.isCarried = true;
+            
+            // Visual effect
+            this.effects.createAbsorptionEffect(
+                nearest.position,
+                this.playerPosition,
+                nearest.material.color.getHex()
+            );
+            
+            this.audio.playAbsorption(0.5);
+            this.ui.showNotification('📦 Grabbed debris', `Carrying ${this.carriedDebris.length}/${this.maxCarriedDebris}`, 'normal');
+        } else {
+            this.ui.showNotification('❌ No debris nearby', `Get within ${this.grabRange}m`, 'normal');
+        }
+    }
+    
+    updateCarriedDebris(deltaTime) {
+        // Remove any debris that was absorbed or destroyed
+        this.carriedDebris = this.carriedDebris.filter(d => 
+            this.engine.debrisPool.getActive().includes(d)
+        );
+        
+        // Update positions of carried debris to orbit around player
+        this.carriedDebris.forEach((debris, index) => {
+            const angle = (index / this.carriedDebris.length) * Math.PI * 2 + this.gameTime;
+            const orbitRadius = 3 + this.player.userData.radius;
+            const height = Math.sin(this.gameTime * 2 + index) * 1.5;
+            
+            const targetX = this.playerPosition.x + Math.cos(angle) * orbitRadius;
+            const targetY = this.playerPosition.y + height;
+            const targetZ = this.playerPosition.z + Math.sin(angle) * orbitRadius;
+            
+            const targetPos = new THREE.Vector3(targetX, targetY, targetZ);
+            
+            // Smoothly move debris to target position
+            debris.position.lerp(targetPos, deltaTime * 5);
+            
+            // Zero out velocity while carried
+            debris.userData.velocity.set(0, 0, 0);
+            
+            // Rotate carried debris
+            debris.rotation.x += deltaTime * 2;
+            debris.rotation.y += deltaTime * 2;
+        });
+    }
+    
+    processRecyclerAbsorption(debris, recycler) {
+        // Trigger absorption effect in engine
+        const debrisData = this.engine.absorbDebris(debris, recycler);
+        
+        // Remove from carried debris array
+        const index = this.carriedDebris.indexOf(debris);
+        if (index > -1) {
+            this.carriedDebris.splice(index, 1);
+        }
+        
+        // Award resources based on debris mass
+        const debrisMass = debrisData.mass;
+        const resourceAmount = debrisMass * 2; // Higher reward for recycling
+        
+        // Random resource type
+        const resourceType = Math.random();
+        if (resourceType < 0.3) {
+            this.resources.addResource('plastic', resourceAmount);
+        } else if (resourceType < 0.6) {
+            this.resources.addResource('metal', resourceAmount);
+        } else if (resourceType < 0.9) {
+            this.resources.addResource('organic', resourceAmount);
+        } else {
+            this.resources.addResource('seeds', Math.floor(resourceAmount * 0.5));
+        }
+        
+        // Add points
+        this.gameState.addScore(Math.floor(debrisMass * 10));
+        
+        // Play sound and show notification
+        this.audio.playRecycle();
+        
+        // Show notification when carrying count changes
+        if (this.carriedDebris.length === 0) {
+            this.ui.showNotification('♻️ All debris recycled!', `+${Math.floor(resourceAmount)} resources`, 'success');
+        }
+    }
+    
     // Gravity field methods
     cycleGravityMode() {
         const modes = ['neutral', 'attract', 'repel'];
@@ -585,6 +738,9 @@ class GravshiftGame {
         const isAttract = this.gravityMode === 'attract';
         
         debris.forEach(d => {
+            // Skip debris being carried
+            if (this.carriedDebris.includes(d)) return;
+            
             const toPlayer = new THREE.Vector3().subVectors(this.playerPosition, d.position);
             const distance = toPlayer.length();
             
