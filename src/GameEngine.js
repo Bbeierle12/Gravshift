@@ -123,7 +123,7 @@ export class GameEngine {
         this.particlePool = new ObjectPool(
             () => this.createParticle(),
             (particle) => this.resetParticle(particle),
-            200
+            400
         );
     }
 

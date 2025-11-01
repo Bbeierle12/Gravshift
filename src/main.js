@@ -52,7 +52,7 @@ class GravshiftGame {
         // Game settings
         this.debrisSpawnTimer = 0;
         this.debrisSpawnInterval = 2;
-        this.maxDebris = 30;
+        this.maxDebris = 90;
         
         // Time tracking
         this.lastTime = 0;
